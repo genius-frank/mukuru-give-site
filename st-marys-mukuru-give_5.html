@@ -293,11 +293,15 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .modal-notconnected p {
+  .modal-notconnected p, .modal-error p {
     font-size: 14px; color: var(--charcoal-soft); background: rgba(201,154,60,0.15);
     border-radius: 12px; padding: 14px; margin-bottom: 16px;
   }
-  .modal-notconnected .btn { width: 100%; justify-content: center; }
+  .modal-sent p {
+    font-size: 14px; color: var(--charcoal-soft); background: rgba(23,40,31,0.08);
+    border: 1px solid rgba(23,40,31,0.15); border-radius: 12px; padding: 14px; margin-bottom: 16px;
+  }
+  .modal-notconnected .btn, .modal-error .btn, .modal-sent .btn { width: 100%; justify-content: center; }
 
   /* ---------- Footer ---------- */
   footer { background: var(--ink); color: rgba(251,246,234,0.7); padding: 40px 0; text-align: center; }
@@ -536,6 +540,16 @@
       <p>Check your phone — enter your M-Pesa PIN to complete.</p>
     </div>
 
+    <div class="modal-sent" id="modalSent" hidden>
+      <p><strong>Prompt sent to your phone.</strong> Check it now and enter your M-Pesa PIN there to finish — nothing more happens on this screen, the rest is on your phone.</p>
+      <button class="btn btn-primary" type="button" onclick="closeModal()">Got it</button>
+    </div>
+
+    <div class="modal-error" id="modalError" hidden>
+      <p id="errorMessage">Something went wrong.</p>
+      <button class="btn btn-primary" type="button" onclick="closeModal()">Got it</button>
+    </div>
+
     <div class="modal-notconnected" id="modalNotConnected" hidden>
       <p><strong>No payment was sent.</strong> This screen only previews how it will feel once the real Safaricom connection is switched on — nothing has touched your M-Pesa. To give right now, use the Paybill details below instead.</p>
       <button class="btn btn-primary" type="button" onclick="closeModal()">Got it</button>
@@ -657,10 +671,6 @@
 
   function confirmGive() {
     if (!BACKEND_ENDPOINT) {
-      // No real payment connection yet — go straight to the honest
-      // message. Never show the "check your phone" waiting screen
-      // when nothing is actually being sent, so no one mistakes a
-      // preview for a real payment prompt.
       setModalState('notconnected');
       return;
     }
@@ -676,18 +686,32 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, phone: phone, amount: amount })
     })
-      .then(function(r) { return r.json(); })
-      .then(function() {
-        setModalState('notconnected'); // swap for a real success/failure state once the callback flow is wired up
+      .then(function(r) {
+        return r.json().then(function(data) { return { ok: r.ok, data: data }; });
       })
-      .catch(function() {
-        setModalState('notconnected');
+      .then(function(result) {
+        if (result.ok && result.data && result.data.ok) {
+          setModalState('sent');
+        } else {
+          showError((result.data && result.data.error) || 'Safaricom could not start this payment. Please try again.');
+        }
+      })
+      .catch(function(err) {
+        console.error('STK push request failed:', err);
+        showError('Could not reach the payment system — check your connection and try again.');
       });
+  }
+
+  function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    setModalState('error');
   }
 
   function setModalState(state) {
     document.getElementById('modalActionsConfirm').hidden = state !== 'confirm';
     document.getElementById('modalWaiting').hidden = state !== 'waiting';
+    document.getElementById('modalSent').hidden = state !== 'sent';
+    document.getElementById('modalError').hidden = state !== 'error';
     document.getElementById('modalNotConnected').hidden = state !== 'notconnected';
   }
 
